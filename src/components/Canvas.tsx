@@ -32,6 +32,24 @@ export function Canvas({ className }: CanvasProps) {
     return { x: cellX, y: cellY };
   }, [state.zoom, state.panOffset]);
 
+  // Функция для получения координат из touch события
+  const getTouchCanvasCoordinates = useCallback((touch: React.Touch) => {
+    if (!canvasRef.current) return null;
+
+    const rect = canvasRef.current.getBoundingClientRect();
+    const x = touch.clientX - rect.left;
+    const y = touch.clientY - rect.top;
+
+    // Базовый размер клетки в пикселях
+    const baseCellSize = 8;
+
+    // Учитываем zoom и pan
+    const cellX = Math.floor((x - state.panOffset.x) / (baseCellSize * state.zoom));
+    const cellY = Math.floor((y - state.panOffset.y) / (baseCellSize * state.zoom));
+
+    return { x: cellX, y: cellY };
+  }, [state.zoom, state.panOffset]);
+
   const drawBrush = useCallback((centerX: number, centerY: number, color: string) => {
     const { currentBrush } = state;
     const cells: { x: number; y: number }[] = [];
@@ -77,6 +95,15 @@ export function Canvas({ className }: CanvasProps) {
     const targetColor = getCellColor(startX, startY);
     if (targetColor === newColor) return;
 
+    // Вычисляем границы видимой области
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+
+    const minX = Math.floor((-state.panOffset.x) / (8 * state.zoom)) - 1;
+    const maxX = minX + Math.ceil(canvas.width / (8 * state.zoom)) + 2;
+    const minY = Math.floor((-state.panOffset.y) / (8 * state.zoom)) - 1;
+    const maxY = minY + Math.ceil(canvas.height / (8 * state.zoom)) + 2;
+
     const stack: Point[] = [{ x: startX, y: startY }];
     const visited = new Set<string>();
 
@@ -101,13 +128,18 @@ export function Canvas({ className }: CanvasProps) {
       ];
 
       for (const neighbor of neighbors) {
-        // Заливка работает в любом месте белой области, без ограничений
+        // Ограничиваем заливку текущим экраном (видимой областью)
+        if (
+          neighbor.x < minX || neighbor.x > maxX ||
+          neighbor.y < minY || neighbor.y > maxY
+        ) continue;
+
         if (!visited.has(`${neighbor.x},${neighbor.y}`)) {
           stack.push(neighbor);
         }
       }
     }
-  }, [getCellColor, setCell]);
+  }, [getCellColor, setCell, state.panOffset, state.zoom]);
 
   const handleMouseDown = useCallback((event: React.MouseEvent) => {
     const coords = getCanvasCoordinates(event);
@@ -197,6 +229,28 @@ export function Canvas({ className }: CanvasProps) {
   // Панорамирование (перетаскивание)
   const [isPanning, setIsPanning] = useState(false);
   const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
+
+  // Touch состояния для мультитач жестов
+  const [isDrawingTouch, setIsDrawingTouch] = useState(false);
+  const [isPinching, setIsPinching] = useState(false);
+  const [initialPinchDistance, setInitialPinchDistance] = useState(0);
+  const [initialPinchZoom, setInitialPinchZoom] = useState(1);
+  const [initialPinchCenter, setInitialPinchCenter] = useState<Point>({ x: 0, y: 0 });
+
+  // Вспомогательные функции для touch
+  const getDistance = (touch1: React.Touch, touch2: React.Touch) => {
+    return Math.sqrt(
+      Math.pow(touch2.clientX - touch1.clientX, 2) +
+      Math.pow(touch2.clientY - touch1.clientY, 2)
+    );
+  };
+
+  const getCenter = (touch1: React.Touch, touch2: React.Touch): Point => {
+    return {
+      x: (touch1.clientX + touch2.clientX) / 2,
+      y: (touch1.clientY + touch2.clientY) / 2
+    };
+  };
 
   // Обработчик клавиш
   useEffect(() => {
@@ -380,6 +434,118 @@ export function Canvas({ className }: CanvasProps) {
     setLastPanPoint(null);
   }, []);
 
+  // Touch обработчики
+  const handleTouchStart = useCallback((event: React.TouchEvent) => {
+    event.preventDefault();
+
+    const touches = event.touches;
+
+    if (touches.length === 1) {
+      // Один палец - рисование или панорамирование
+      const touch = touches[0];
+      const coords = getTouchCanvasCoordinates(touch);
+
+      if (coords) {
+        setIsDrawingTouch(true);
+        lastCellRef.current = coords;
+
+        saveToHistory();
+
+        if (state.tool === 'picker') {
+          const color = getCellColor(coords.x, coords.y);
+          if (color) {
+            dispatch({ type: 'SET_CURRENT_COLOR', payload: color });
+          }
+        } else if (state.tool === 'fill') {
+          floodFill(coords.x, coords.y, state.currentColor);
+        } else {
+          drawBrush(coords.x, coords.y, state.currentColor);
+        }
+      }
+    } else if (touches.length === 2) {
+      // Два пальца - pinch-to-zoom
+      event.preventDefault();
+
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+
+      setIsPinching(true);
+      setInitialPinchDistance(getDistance(touch1, touch2));
+      setInitialPinchZoom(state.zoom);
+      setInitialPinchCenter(getCenter(touch1, touch2));
+    }
+  }, [getTouchCanvasCoordinates, state.tool, state.currentColor, drawBrush, floodFill, saveToHistory, getCellColor, dispatch, state.zoom]);
+
+  const handleTouchMove = useCallback((event: React.TouchEvent) => {
+
+    const touches = event.touches;
+
+    if (touches.length === 1 && isDrawingTouch) {
+      // Один палец - рисование
+      const touch = touches[0];
+      const coords = getTouchCanvasCoordinates(touch);
+
+      if (coords && lastCellRef.current) {
+        if (coords.x !== lastCellRef.current.x || coords.y !== lastCellRef.current.y) {
+          if (state.tool === 'picker') {
+            const color = getCellColor(coords.x, coords.y);
+            if (color) {
+              dispatch({ type: 'SET_CURRENT_COLOR', payload: color });
+            }
+          } else {
+            drawBrush(coords.x, coords.y, state.currentColor);
+          }
+          lastCellRef.current = coords;
+        }
+      }
+    } else if (touches.length === 2 && isPinching) {
+      // Два пальца - pinch-to-zoom и pan
+      const touch1 = touches[0];
+      const touch2 = touches[1];
+
+      // Обработка zoom
+      const currentDistance = getDistance(touch1, touch2);
+      const zoomRatio = currentDistance / initialPinchDistance;
+      const newZoom = Math.max(0.25, Math.min(4, initialPinchZoom * zoomRatio));
+
+      // Обработка pan
+      const currentCenter = getCenter(touch1, touch2);
+      const deltaX = currentCenter.x - initialPinchCenter.x;
+      const deltaY = currentCenter.y - initialPinchCenter.y;
+
+      dispatch({
+        type: 'SET_ZOOM_AND_PAN',
+        payload: {
+          zoom: newZoom,
+          panOffset: {
+            x: state.panOffset.x + deltaX,
+            y: state.panOffset.y + deltaY
+          }
+        }
+      });
+
+      setInitialPinchCenter(currentCenter);
+      setInitialPinchZoom(newZoom);
+    }
+  }, [isDrawingTouch, isPinching, getTouchCanvasCoordinates, state.tool, state.currentColor, drawBrush, getCellColor, dispatch, initialPinchDistance, initialPinchZoom, initialPinchCenter, state.panOffset]);
+
+  const handleTouchEnd = useCallback((event: React.TouchEvent) => {
+    event.preventDefault();
+
+    const touches = event.touches;
+
+    if (touches.length === 0) {
+      // Все пальцы убраны
+      setIsDrawingTouch(false);
+      setIsPinching(false);
+      lastCellRef.current = null;
+    } else if (touches.length === 1 && isPinching) {
+      // Один палец остался - переходим к рисованию
+      setIsPinching(false);
+      setIsDrawingTouch(true);
+    }
+  }, [isPinching]);
+
   // Отрисовка canvas
   useEffect(() => {
     if (!canvasRef.current) return;
@@ -495,8 +661,12 @@ export function Canvas({ className }: CanvasProps) {
         }}
         onWheel={handleWheel}
         onContextMenu={(e) => e.preventDefault()}
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
         style={{
-          imageRendering: 'pixelated'
+          imageRendering: 'pixelated',
+          touchAction: 'none' // Отключаем стандартные touch действия браузера
         }}
       />
 

@@ -65,7 +65,7 @@ export function CompactToolbar() {
                   e.preventDefault();
                   setActivePopover(activePopover === tool.id ? null : tool.id);
                 }}
-                className={`w-12 h-12 rounded-xl border-2 transition-all duration-200 flex items-center justify-center ${
+                className={`w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 transition-all duration-200 flex items-center justify-center text-xs md:text-sm ${
                   state.tool === tool.id
                     ? 'bg-purple-300 text-slate-800 border-purple-300 shadow-lg shadow-purple-200 scale-105'
                     : 'bg-white text-slate-600 border-purple-200 hover:bg-purple-50 hover:scale-105'
@@ -113,7 +113,7 @@ export function CompactToolbar() {
         {/* Сохранение */}
         <button
           onClick={handleSave}
-          className="w-12 h-12 rounded-xl border-2 bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-200 transition-all duration-200 flex items-center justify-center shadow-sm"
+          className="w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-200 transition-all duration-200 flex items-center justify-center shadow-sm text-xs md:text-sm"
           title="Сохранить (Ctrl+S)"
         >
           <Save className="w-5 h-5" />
@@ -148,7 +148,7 @@ export function CompactToolbar() {
           className="w-full flex items-center justify-center group"
           title="Открыть палитру цветов"
         >
-          <div className="relative w-12 h-12">
+          <div className="relative w-10 h-10 md:w-12 md:h-12">
             <div
               className="w-full h-full border-2 border-purple-200 rounded-xl cursor-pointer transition-all group-hover:scale-105 group-hover:border-purple-300 shadow-sm"
               style={{ backgroundColor: state.currentColor }}

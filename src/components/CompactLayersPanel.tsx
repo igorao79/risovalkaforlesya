@@ -40,7 +40,7 @@ export function CompactLayersPanel() {
                 e.preventDefault();
                 setActivePopover(activePopover === layer.id ? null : layer.id);
               }}
-              className={`w-12 h-12 rounded-xl border-2 transition-all duration-200 flex flex-col items-center justify-center text-xs ${
+              className={`w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 transition-all duration-200 flex flex-col items-center justify-center text-xs ${
                 state.activeLayerId === layer.id
                   ? 'bg-purple-300 text-slate-800 border-purple-300 shadow-lg shadow-purple-200 scale-105'
                   : 'bg-white text-slate-600 border-purple-200 hover:bg-purple-50 hover:scale-105'
@@ -136,7 +136,7 @@ export function CompactLayersPanel() {
             e.preventDefault();
             setActivePopover(activePopover === 'add-layer' ? null : 'add-layer');
           }}
-          className="w-12 h-12 rounded-xl border-2 bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-200 transition-all duration-200 flex items-center justify-center shadow-sm"
+          className="w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 bg-sky-100 text-sky-700 border-sky-200 hover:bg-sky-200 transition-all duration-200 flex items-center justify-center shadow-sm text-xs md:text-sm"
           title="Добавить слой"
         >
           <Plus className="w-5 h-5" />
@@ -187,7 +187,7 @@ export function CompactLayersPanel() {
               });
             }
           }}
-          className="w-12 h-12 rounded-xl border-2 bg-red-50 text-red-500 border-red-200 hover:bg-red-100 transition-all duration-200 flex items-center justify-center"
+          className="w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 bg-red-50 text-red-500 border-red-200 hover:bg-red-100 transition-all duration-200 flex items-center justify-center text-xs md:text-sm"
           title="Очистить активный слой"
         >
           <Trash2 className="w-5 h-5" />
@@ -196,7 +196,7 @@ export function CompactLayersPanel() {
         {/* Показать/скрыть сетку */}
         <button
           onClick={toggleGrid}
-          className={`w-12 h-12 rounded-xl border-2 transition-all duration-200 flex items-center justify-center ${
+          className={`w-10 h-10 md:w-12 md:h-12 rounded-xl border-2 transition-all duration-200 flex items-center justify-center text-xs md:text-sm ${
             state.showGrid
               ? 'bg-purple-200 text-slate-800 border-purple-300 hover:bg-purple-300'
               : 'bg-white text-slate-600 border-purple-200 hover:bg-purple-50'
