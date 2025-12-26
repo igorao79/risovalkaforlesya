@@ -166,20 +166,20 @@ export function Canvas({ className }: CanvasProps) {
     const newZoom = Math.max(0.25, Math.min(4, state.zoom * zoomFactor));
 
     if (newZoom !== state.zoom) {
-      // Масштабируем от центра canvas
+      // Масштабируем от позиции мыши
       const canvas = canvasRef.current;
       if (canvas) {
         const rect = canvas.getBoundingClientRect();
-        const centerX = rect.width / 2;
-        const centerY = rect.height / 2;
+        const mouseX = event.clientX - rect.left;
+        const mouseY = event.clientY - rect.top;
 
-        // Текущие координаты центра в мировых координатах
-        const worldCenterX = (centerX - state.panOffset.x) / state.zoom;
-        const worldCenterY = (centerY - state.panOffset.y) / state.zoom;
+        // Текущие координаты мыши в мировых координатах
+        const worldX = (mouseX - state.panOffset.x) / state.zoom;
+        const worldY = (mouseY - state.panOffset.y) / state.zoom;
 
-        // Новые координаты центра после масштабирования
-        const newPanOffsetX = centerX - worldCenterX * newZoom;
-        const newPanOffsetY = centerY - worldCenterY * newZoom;
+        // Новые координаты после масштабирования
+        const newPanOffsetX = mouseX - worldX * newZoom;
+        const newPanOffsetY = mouseY - worldY * newZoom;
 
         dispatch({
           type: 'SET_ZOOM_AND_PAN',
@@ -199,65 +199,73 @@ export function Canvas({ className }: CanvasProps) {
   const [lastPanPoint, setLastPanPoint] = useState<Point | null>(null);
 
   // Обработчик клавиш
-  const handleKeyDown = useCallback((event: KeyboardEvent) => {
-    // Игнорируем если фокус в input
-    if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
-      return;
-    }
-
-    switch (event.key.toLowerCase()) {
-      case 'b':
-        dispatch({ type: 'SET_TOOL', payload: 'brush' });
-        break;
-      case 'e':
-        dispatch({ type: 'SET_TOOL', payload: 'eraser' });
-        break;
-      case 'f':
-        dispatch({ type: 'SET_TOOL', payload: 'fill' });
-        break;
-      case 'i':
-        dispatch({ type: 'SET_TOOL', payload: 'picker' });
-        break;
-      case 'z':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault();
-          if (event.shiftKey) {
-            redo();
-          } else {
-            undo();
-          }
-        }
-        break;
-      case 'y':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault();
-          redo();
-        }
-        break;
-      case 's':
-        if (event.ctrlKey || event.metaKey) {
-          event.preventDefault();
-          const dataUrl = exportCanvas();
-          const link = document.createElement('a');
-          link.download = `pixel-art-${Date.now()}.png`;
-          link.href = dataUrl;
-          link.click();
-        }
-        break;
-      case '+':
-      case '=':
-        dispatch({ type: 'SET_ZOOM', payload: Math.min(4, state.zoom * 1.2) });
-        break;
-      case '-':
-        dispatch({ type: 'SET_ZOOM', payload: Math.max(0.25, state.zoom / 1.2) });
-        break;
-    }
-  }, [state.zoom, dispatch, exportCanvas, redo, undo]);
-
   useEffect(() => {
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleKeyDown]);
+    const handleKeyDown = (event: KeyboardEvent) => {
+      // Игнорируем если фокус в input
+      if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // Используем event.code для физических клавиш (работает на любой раскладке)
+      const code = event.code;
+      const key = event.key.toLowerCase();
+
+      // Горячие клавиши с Ctrl/Cmd
+      if (event.ctrlKey || event.metaKey) {
+        switch (code) {
+          case 'KeyZ':
+            event.preventDefault();
+            event.stopPropagation();
+            if (event.shiftKey) {
+              redo();
+            } else {
+              undo();
+            }
+            return;
+          case 'KeyY':
+            event.preventDefault();
+            event.stopPropagation();
+            redo();
+            return;
+          case 'KeyS':
+            event.preventDefault();
+            event.stopPropagation();
+            const dataUrl = exportCanvas();
+            const link = document.createElement('a');
+            link.download = `pixel-art-${Date.now()}.png`;
+            link.href = dataUrl;
+            link.click();
+            return;
+        }
+      }
+
+      // Обычные клавиши (без Ctrl)
+      switch (code) {
+        case 'KeyB':
+          dispatch({ type: 'SET_TOOL', payload: 'brush' });
+          break;
+        case 'KeyE':
+          dispatch({ type: 'SET_TOOL', payload: 'eraser' });
+          break;
+        case 'KeyF':
+          dispatch({ type: 'SET_TOOL', payload: 'fill' });
+          break;
+        case 'KeyI':
+          dispatch({ type: 'SET_TOOL', payload: 'picker' });
+          break;
+      }
+
+      // Масштабирование
+      if (key === '+' || key === '=') {
+        dispatch({ type: 'SET_ZOOM', payload: Math.min(4, state.zoom * 1.2) });
+      } else if (key === '-') {
+        dispatch({ type: 'SET_ZOOM', payload: Math.max(0.25, state.zoom / 1.2) });
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [state.zoom, dispatch, exportCanvas, redo, undo]);
 
   // Отслеживаем изменение размера контейнера
   useEffect(() => {
@@ -465,11 +473,17 @@ export function Canvas({ className }: CanvasProps) {
         className={`${isPanning ? 'cursor-grabbing' : 'cursor-crosshair'} select-none`}
         onMouseDown={(e) => {
           handleMouseDownPan(e);
-          if (!isPanning) handleMouseDown(e);
+          // Рисуем только левой кнопкой и не при панорамировании
+          if (e.button === 0 && !e.altKey) {
+            handleMouseDown(e);
+          }
         }}
         onMouseMove={(e) => {
           handleMouseMovePan(e);
-          if (!isPanning) handleMouseMove(e);
+          // Рисуем только левой кнопкой и не при панорамировании
+          if (!isPanning) {
+            handleMouseMove(e);
+          }
         }}
         onMouseUp={() => {
           handleMouseUpPan();
@@ -487,7 +501,7 @@ export function Canvas({ className }: CanvasProps) {
       />
 
       {/* Индикатор инструмента */}
-      <div className="absolute top-2 left-2 bg-black/75 text-white px-2 py-1 rounded text-sm">
+      <div className="absolute top-2 left-2 bg-white/90 backdrop-blur-sm border border-purple-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium shadow-md">
         {state.tool === 'brush' && 'Кисть'}
         {state.tool === 'eraser' && 'Ластик'}
         {state.tool === 'fill' && 'Заливка'}
@@ -495,28 +509,19 @@ export function Canvas({ className }: CanvasProps) {
       </div>
 
       {/* Индикатор цвета */}
-      <div className="absolute top-2 right-2 flex items-center gap-2">
+      <div className="absolute top-2 right-2 flex items-center gap-2 bg-white/90 backdrop-blur-sm border border-purple-200 px-3 py-1.5 rounded-lg shadow-md">
         <div
-          className="w-6 h-6 border-2 border-gray-300 rounded"
+          className="w-6 h-6 border-2 border-purple-300 rounded shadow-sm"
           style={{ backgroundColor: state.currentColor }}
         />
-        <span className="bg-black/75 text-white px-2 py-1 rounded text-sm">
+        <span className="text-slate-700 text-sm font-mono font-medium">
           {state.currentColor}
         </span>
       </div>
 
       {/* Индикатор масштаба */}
-      <div className="absolute bottom-2 right-2 bg-black/75 text-white px-2 py-1 rounded text-sm">
-        {state.zoom}x
-      </div>
-
-      {/* Подсказки */}
-      <div className="absolute bottom-2 left-2 bg-black/75 text-white px-3 py-2 rounded text-xs space-y-1 max-w-xs">
-        <div>🖱️ Колесико мыши: масштаб</div>
-        <div>🖱️ Alt + перетаскивание: панорамирование</div>
-        <div>⌨️ B/E/F/I: кисть/ластик/заливка/пипетка</div>
-        <div>⌨️ Ctrl+Z/Y: отмена/повтор</div>
-        <div>⌨️ Ctrl+S: сохранить</div>
+      <div className="absolute bottom-2 right-2 bg-white/90 backdrop-blur-sm border border-purple-200 text-slate-700 px-3 py-1.5 rounded-lg text-sm font-medium shadow-md">
+        {Math.round(state.zoom * 100)}%
       </div>
     </div>
   );

@@ -32,6 +32,7 @@ type DrawingAction =
   | { type: 'SET_ZOOM_AND_PAN'; payload: { zoom: number; panOffset: Point } }
   | { type: 'SET_TOOL'; payload: 'brush' | 'eraser' | 'fill' | 'picker' }
   | { type: 'TOGGLE_GRID' }
+  | { type: 'ADD_RECENT_COLOR'; payload: string }
   | { type: 'ADD_LAYER'; payload: { name: string } }
   | { type: 'REMOVE_LAYER'; payload: string }
   | { type: 'SET_ACTIVE_LAYER'; payload: string }
@@ -41,29 +42,43 @@ type DrawingAction =
   | { type: 'REDO' }
   | { type: 'SAVE_TO_HISTORY' };
 
-const initialState: DrawingState = {
-  canvasSize: { width: 64, height: 64 },
-  cellSize: 8,
-  zoom: 1,
-  panOffset: { x: 0, y: 0 },
-  currentColor: '#000000',
-  currentBrush: DEFAULT_BRUSHES[0],
-  layers: [
-    {
-      id: 'layer-1',
-      name: 'Слой 1',
-      cells: [],
-      visible: true,
-      opacity: 1
-    }
-  ],
-  activeLayerId: 'layer-1',
-  isDrawing: false,
-  tool: 'brush',
-  showGrid: true,
-  history: [],
-  historyIndex: -1
+const createInitialState = (): DrawingState => {
+  const baseState: Omit<DrawingState, 'history' | 'historyIndex'> = {
+    canvasSize: { width: 64, height: 64 },
+    cellSize: 8,
+    zoom: 1,
+    panOffset: { x: 0, y: 0 },
+    currentColor: '#000000',
+    currentBrush: DEFAULT_BRUSHES[0],
+    layers: [
+      {
+        id: 'layer-1',
+        name: 'Слой 1',
+        cells: [],
+        visible: true,
+        opacity: 1
+      }
+    ],
+    activeLayerId: 'layer-1',
+    isDrawing: false,
+    tool: 'brush',
+    showGrid: true,
+    recentColors: ['#000000', '#FFFFFF', '#FF0000', '#00FF00', '#0000FF', '#FFFF00', '#FF00FF', '#00FFFF']
+  };
+
+  const initialState: DrawingState = {
+    ...baseState,
+    history: [],
+    historyIndex: 0
+  };
+
+  // Добавляем начальное состояние в историю
+  initialState.history = [{ ...initialState }];
+
+  return initialState;
 };
+
+const initialState = createInitialState();
 
 function drawingReducer(state: DrawingState, action: DrawingAction): DrawingState {
   switch (action.type) {
@@ -106,8 +121,32 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
       return { ...state, layers: newLayers };
     }
 
-    case 'SET_CURRENT_COLOR':
-      return { ...state, currentColor: action.payload };
+    case 'SET_CURRENT_COLOR': {
+      const newColor = action.payload;
+      // Добавляем цвет в историю, если его там еще нет
+      let newRecentColors = state.recentColors.filter(c => c !== newColor);
+      newRecentColors.unshift(newColor);
+      // Ограничиваем до 16 последних цветов
+      newRecentColors = newRecentColors.slice(0, 16);
+      
+      return { 
+        ...state, 
+        currentColor: newColor,
+        recentColors: newRecentColors
+      };
+    }
+
+    case 'ADD_RECENT_COLOR': {
+      const newColor = action.payload;
+      let newRecentColors = state.recentColors.filter(c => c !== newColor);
+      newRecentColors.unshift(newColor);
+      newRecentColors = newRecentColors.slice(0, 16);
+      
+      return { 
+        ...state,
+        recentColors: newRecentColors
+      };
+    }
 
     case 'SET_CURRENT_BRUSH':
       return { ...state, currentBrush: action.payload };
@@ -142,9 +181,12 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         visible: true,
         opacity: 1
       };
+      // Вставляем новый слой НА ВТОРУЮ ПОЗИЦИЮ (индекс 1), сразу под первым слоем
+      const newLayers = [...state.layers];
+      newLayers.splice(1, 0, newLayer); // Вставляем на позицию 1
       return {
         ...state,
-        layers: [...state.layers, newLayer],
+        layers: newLayers,
         activeLayerId: newLayer.id
       };
     }
@@ -186,12 +228,25 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
     }
 
     case 'SAVE_TO_HISTORY': {
+      // Создаем копию состояния без циклических ссылок
+      const stateToSave: DrawingState = {
+        ...state,
+        history: state.history,
+        historyIndex: state.historyIndex
+      };
+
+      // Удаляем все состояния после текущего индекса
       const newHistory = state.history.slice(0, state.historyIndex + 1);
-      newHistory.push({ ...state });
+      // Добавляем новое состояние
+      newHistory.push(stateToSave);
+      
+      // Ограничиваем размер истории до 50 шагов
+      const limitedHistory = newHistory.slice(-50);
+
       return {
         ...state,
-        history: newHistory,
-        historyIndex: newHistory.length - 1
+        history: limitedHistory,
+        historyIndex: limitedHistory.length - 1
       };
     }
 
@@ -201,7 +256,8 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         return {
           ...previousState,
           history: state.history,
-          historyIndex: state.historyIndex - 1
+          historyIndex: state.historyIndex - 1,
+          recentColors: state.recentColors // Сохраняем историю цветов
         };
       }
       return state;
@@ -213,7 +269,8 @@ function drawingReducer(state: DrawingState, action: DrawingAction): DrawingStat
         return {
           ...nextState,
           history: state.history,
-          historyIndex: state.historyIndex + 1
+          historyIndex: state.historyIndex + 1,
+          recentColors: state.recentColors // Сохраняем историю цветов
         };
       }
       return state;
@@ -283,33 +340,91 @@ export function DrawingProvider({ children }: { children: ReactNode }) {
   };
 
   const exportCanvas = (): string => {
+    // Собираем все видимые клетки
+    const allCells: { x: number; y: number; color: string; opacity: number }[] = [];
+    
+    for (const layer of state.layers) {
+      if (!layer.visible) continue;
+      for (const cell of layer.cells) {
+        allCells.push({ ...cell, opacity: layer.opacity });
+      }
+    }
+
+    // Если нет клеток, возвращаем пустое прозрачное изображение
+    if (allCells.length === 0) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 64;
+      canvas.height = 64;
+      return canvas.toDataURL('image/png');
+    }
+
+    // Находим границы рисунка
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
+
+    for (const cell of allCells) {
+      minX = Math.min(minX, cell.x);
+      minY = Math.min(minY, cell.y);
+      maxX = Math.max(maxX, cell.x);
+      maxY = Math.max(maxY, cell.y);
+    }
+
+    // Добавляем небольшой отступ
+    const padding = 1;
+    minX -= padding;
+    minY -= padding;
+    maxX += padding;
+    maxY += padding;
+
+    // Вычисляем размеры
+    const width = maxX - minX + 1;
+    const height = maxY - minY + 1;
+    const baseCellSize = 8; // Базовый размер клетки для экспорта
+
     // Создаем canvas для экспорта
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d')!;
-    const { canvasSize, cellSize } = state;
+    
+    canvas.width = width * baseCellSize;
+    canvas.height = height * baseCellSize;
 
-    canvas.width = canvasSize.width * cellSize;
-    canvas.height = canvasSize.height * cellSize;
+    // Прозрачный фон (не заполняем)
 
-    // Очищаем canvas
-    ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-    // Рисуем слои
+    // Группируем клетки по слоям для правильной отрисовки
+    const layerMap = new Map<string, typeof allCells>();
     for (const layer of state.layers) {
       if (!layer.visible) continue;
+      layerMap.set(layer.id, []);
+    }
 
+    for (const layer of state.layers) {
+      if (!layer.visible) continue;
+      for (const cell of layer.cells) {
+        layerMap.get(layer.id)?.push({ ...cell, opacity: layer.opacity });
+      }
+    }
+
+    // Рисуем слои в правильном порядке
+    for (const layer of state.layers) {
+      if (!layer.visible) continue;
+      const cells = layerMap.get(layer.id) || [];
+      
       ctx.globalAlpha = layer.opacity;
 
-      for (const cell of layer.cells) {
+      for (const cell of cells) {
         ctx.fillStyle = cell.color;
         ctx.fillRect(
-          cell.x * cellSize,
-          cell.y * cellSize,
-          cellSize,
-          cellSize
+          (cell.x - minX) * baseCellSize,
+          (cell.y - minY) * baseCellSize,
+          baseCellSize,
+          baseCellSize
         );
       }
     }
+
+    ctx.globalAlpha = 1.0;
 
     return canvas.toDataURL('image/png');
   };

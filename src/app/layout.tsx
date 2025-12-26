@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Pixel Art Studio - Рисование по клеткам",
+  title: "lesyaris",
   description: "Создавайте потрясающие пиксель-арт рисунки с помощью нашего интуитивного редактора",
 };
 

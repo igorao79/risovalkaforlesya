@@ -39,6 +39,7 @@ export interface DrawingState {
   isDrawing: boolean;
   tool: 'brush' | 'eraser' | 'fill' | 'picker';
   showGrid: boolean;
+  recentColors: string[];
   history: DrawingState[];
   historyIndex: number;
 }
